@@ -1,0 +1,23 @@
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+next-env.d.ts
+
+.env
+.env.local
+.env*.local
+
+# Certificados y claves privadas de ARCA — NUNCA versionar
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+certs/
+
+storage/
+.DS_Store
+npm-debug.log*

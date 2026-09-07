@@ -1,0 +1,467 @@
+// Facturador electrónico — Argentina / ARCA (ex AFIP)
+// Prisma schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Usuarios y seguridad
+// ---------------------------------------------------------------------------
+
+enum Rol {
+  ADMIN // ABM completo + configuración + usuarios
+  FACTURADOR // ABM clientes/servicios + emitir comprobantes
+  LECTURA // solo consulta y descarga de PDF
+}
+
+model Usuario {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  nombre       String
+  passwordHash String
+  rol          Rol       @default(LECTURA)
+  activo       Boolean   @default(true)
+  ultimoAcceso DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  comprobantesCreados    Comprobante[] @relation("ComprobanteCreadoPor")
+  comprobantesAutorizados Comprobante[] @relation("ComprobanteAutorizadoPor")
+  corridas               CorridaFacturacion[]
+  ajustes                AjusteServicio[]
+  auditoria              Auditoria[]
+
+  @@index([rol, activo])
+}
+
+model Auditoria {
+  id        String   @id @default(cuid())
+  usuarioId String?
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+  accion    String // CREAR | ACTUALIZAR | ELIMINAR | EMITIR | ANULAR | LOGIN | CONFIG
+  entidad   String // Cliente | Servicio | Comprobante | Usuario | Empresa | Corrida
+  entidadId String?
+  detalle   Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  @@index([entidad, entidadId])
+  @@index([createdAt])
+}
+
+// ---------------------------------------------------------------------------
+// Empresa facturante + conexión con ARCA
+// ---------------------------------------------------------------------------
+
+enum CondicionIVA {
+  RESPONSABLE_INSCRIPTO
+  MONOTRIBUTO
+  EXENTO
+  CONSUMIDOR_FINAL
+  NO_CATEGORIZADO
+  MONOTRIBUTO_SOCIAL
+  IVA_LIBERADO
+  NO_ALCANZADO
+}
+
+enum AmbienteArca {
+  HOMOLOGACION
+  PRODUCCION
+}
+
+/// Configuración única de la empresa que emite (registro singleton id = 1)
+model Empresa {
+  id             Int          @id @default(1)
+  razonSocial    String
+  nombreFantasia String?
+  cuit           String
+  condicionIVA   CondicionIVA @default(RESPONSABLE_INSCRIPTO)
+  ingresosBrutos String?
+  inicioActividades DateTime?
+  domicilio      String?
+  localidad      String?
+  provincia      String?
+  codigoPostal   String?
+  telefono       String?
+  email          String?
+  web            String?
+  logoBase64     String? // logo embebido en el PDF
+
+  // Conexión con ARCA (WSAA + WSFEv1)
+  arcaAmbiente        AmbienteArca @default(PRODUCCION)
+  arcaCertEncrypted   String? // certificado X.509 (PEM) cifrado con AES-256-GCM
+  arcaKeyEncrypted    String? // clave privada (PEM) cifrada con AES-256-GCM
+  arcaCertVencimiento DateTime?
+  arcaCertSubject     String?
+  arcaUltimaConexion  DateTime?
+  arcaUltimoError     String?
+
+  // Preferencias de emisión
+  ptoVtaDefault    Int     @default(1)
+  conceptoDefault  Int     @default(2) // 1 productos, 2 servicios, 3 ambos
+  diasVtoPagoDefault Int   @default(0)
+  leyendaPie       String?
+
+  updatedAt DateTime @updatedAt
+}
+
+model PuntoVenta {
+  id          Int      @id @default(autoincrement())
+  numero      Int      @unique
+  descripcion String?
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  comprobantes Comprobante[]
+}
+
+/// Cache del Ticket de Acceso de WSAA (evita pedir uno nuevo antes de las 12 h)
+model TicketAcceso {
+  id         String       @id @default(cuid())
+  servicio   String // wsfe
+  ambiente   AmbienteArca
+  token      String       @db.Text
+  sign       String       @db.Text
+  generadoEn DateTime
+  expiraEn   DateTime
+  createdAt  DateTime     @default(now())
+
+  @@unique([servicio, ambiente])
+}
+
+// ---------------------------------------------------------------------------
+// Clientes
+// ---------------------------------------------------------------------------
+
+enum TipoDocumento {
+  CUIT
+  CUIL
+  DNI
+  PASAPORTE
+  CDI
+  SIN_IDENTIFICAR
+}
+
+model Cliente {
+  id               String        @id @default(cuid())
+  codigo           String        @unique // código interno / legajo
+  razonSocial      String
+  nombreFantasia   String?
+  tipoDocumento    TipoDocumento @default(CUIT)
+  numeroDocumento  String
+  condicionIVA     CondicionIVA
+  email            String?
+  emailFacturacion String?
+  telefono         String?
+  contacto         String?
+
+  domicilio    String?
+  localidad    String?
+  provincia    String?
+  codigoPostal String?
+  pais         String  @default("Argentina")
+
+  // Condiciones comerciales por defecto (heredables por cada servicio)
+  moneda            String  @default("PES") // PES | DOL
+  diasVencimiento   Int     @default(0)
+  condicionPago     String? // "Contado", "30 días fecha factura", etc.
+  percepcionIIBB    Decimal? @db.Decimal(5, 2)
+  notas             String?
+  activo            Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  servicios    Servicio[]
+  comprobantes Comprobante[]
+
+  @@index([activo])
+  @@index([razonSocial])
+}
+
+// ---------------------------------------------------------------------------
+// Índices de ajuste
+// ---------------------------------------------------------------------------
+
+model Indice {
+  id          String   @id @default(cuid())
+  codigo      String   @unique // IPC, ICL, CER, UVA, PARITARIA, CUSTOM
+  nombre      String
+  descripcion String?
+  fuente      String? // INDEC, BCRA, cámara, etc.
+  activo      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  valores   IndiceValor[]
+  servicios Servicio[]
+}
+
+/// Un valor de índice por período. `periodo` es "YYYY-MM".
+model IndiceValor {
+  id       String  @id @default(cuid())
+  indiceId String
+  indice   Indice  @relation(fields: [indiceId], references: [id], onDelete: Cascade)
+  periodo  String
+  valor    Decimal @db.Decimal(18, 6)
+  createdAt DateTime @default(now())
+
+  @@unique([indiceId, periodo])
+  @@index([periodo])
+}
+
+// ---------------------------------------------------------------------------
+// Servicios contratados por cliente
+// ---------------------------------------------------------------------------
+
+enum Periodicidad {
+  MENSUAL
+  BIMESTRAL
+  TRIMESTRAL
+  CUATRIMESTRAL
+  SEMESTRAL
+  ANUAL
+  UNICA
+}
+
+enum TipoAjuste {
+  NINGUNO
+  INDICE
+  PORCENTAJE_FIJO
+}
+
+model Servicio {
+  id          String  @id @default(cuid())
+  clienteId   String
+  cliente     Cliente @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  nombre      String
+  descripcion String? // texto que va al detalle de la factura
+  activo      Boolean @default(true)
+
+  // Precio
+  moneda       String  @default("PES")
+  precioBase   Decimal @db.Decimal(18, 2) // precio original del contrato
+  precioActual Decimal @db.Decimal(18, 2) // precio vigente (se actualiza con los ajustes)
+  alicuotaIVA  Decimal @default(21) @db.Decimal(5, 2) // 0 | 2.5 | 5 | 10.5 | 21 | 27
+  cantidad     Decimal @default(1) @db.Decimal(12, 2)
+  unidad       String  @default("Unidad")
+
+  // Facturación
+  periodicidadFacturacion Periodicidad @default(MENSUAL)
+  diaFacturacion          Int          @default(1) // día del mes en que se emite
+  facturaPorAdelantado    Boolean      @default(true)
+  fechaInicio             DateTime
+  fechaFin                DateTime?
+  proximaFacturacion      DateTime
+  ultimaFacturacion       DateTime?
+
+  // Ajuste
+  tipoAjuste         TipoAjuste    @default(NINGUNO)
+  indiceId           String?
+  indice             Indice?       @relation(fields: [indiceId], references: [id], onDelete: SetNull)
+  periodicidadAjuste Periodicidad?
+  ajustePorcentaje   Decimal?      @db.Decimal(6, 2) // para PORCENTAJE_FIJO
+  periodoBaseIndice  String? // "YYYY-MM" del último valor aplicado
+  proximoAjuste      DateTime?
+  ultimoAjuste       DateTime?
+  topeAjustePorc     Decimal?      @db.Decimal(6, 2) // tope opcional por ajuste
+
+  // Condiciones comerciales
+  diasVencimiento Int     @default(0)
+  condicionPago   String?
+  ordenCompra     String?
+  centroCosto     String?
+  notas           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  ajustes AjusteServicio[]
+  items   ComprobanteItem[]
+
+  @@index([clienteId, activo])
+  @@index([proximaFacturacion])
+}
+
+model AjusteServicio {
+  id             String   @id @default(cuid())
+  servicioId     String
+  servicio       Servicio @relation(fields: [servicioId], references: [id], onDelete: Cascade)
+  fecha          DateTime @default(now())
+  precioAnterior Decimal  @db.Decimal(18, 2)
+  precioNuevo    Decimal  @db.Decimal(18, 2)
+  coeficiente    Decimal  @db.Decimal(12, 6)
+  origen         String // INDICE | PORCENTAJE_FIJO | MANUAL
+  indiceCodigo   String?
+  periodoDesde   String?
+  periodoHasta   String?
+  motivo         String?
+  usuarioId      String?
+  usuario        Usuario? @relation(fields: [usuarioId], references: [id], onDelete: SetNull)
+
+  @@index([servicioId, fecha])
+}
+
+// ---------------------------------------------------------------------------
+// Comprobantes
+// ---------------------------------------------------------------------------
+
+enum TipoComprobante {
+  FACTURA_A
+  FACTURA_B
+  FACTURA_C
+  FACTURA_M
+  NOTA_DEBITO_A
+  NOTA_DEBITO_B
+  NOTA_DEBITO_C
+  NOTA_CREDITO_A
+  NOTA_CREDITO_B
+  NOTA_CREDITO_C
+}
+
+enum EstadoComprobante {
+  BORRADOR // generado, editable
+  OBSERVADO // el control previo encontró problemas
+  APROBADO // pasó el control, listo para enviar a ARCA
+  AUTORIZADO // ARCA devolvió CAE
+  RECHAZADO // ARCA lo rechazó
+  ANULADO // anulado por nota de crédito
+}
+
+enum EstadoCorrida {
+  ABIERTA
+  EN_REVISION
+  EMITIDA
+  CANCELADA
+}
+
+model CorridaFacturacion {
+  id           String        @id @default(cuid())
+  periodo      String // "YYYY-MM"
+  descripcion  String?
+  estado       EstadoCorrida @default(ABIERTA)
+  fechaEmision DateTime? // fecha con la que se emiten los comprobantes
+  creadoPorId  String?
+  creadoPor    Usuario?      @relation(fields: [creadoPorId], references: [id], onDelete: SetNull)
+  notas        String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  comprobantes Comprobante[]
+
+  @@index([periodo])
+}
+
+model Comprobante {
+  id     String            @id @default(cuid())
+  tipo   TipoComprobante
+  estado EstadoComprobante @default(BORRADOR)
+
+  ptoVtaId Int
+  puntoVenta PuntoVenta @relation(fields: [ptoVtaId], references: [id])
+  numero   Int? // asignado al autorizar
+
+  clienteId String
+  cliente   Cliente @relation(fields: [clienteId], references: [id])
+
+  corridaId String?
+  corrida   CorridaFacturacion? @relation(fields: [corridaId], references: [id], onDelete: SetNull)
+
+  // Snapshot del cliente al momento de emitir (los datos fiscales no pueden mutar)
+  cliRazonSocial     String
+  cliTipoDoc         TipoDocumento
+  cliNroDoc          String
+  cliCondicionIVA    CondicionIVA
+  cliDomicilio       String?
+
+  fechaEmision   DateTime
+  fechaVtoPago   DateTime?
+  concepto       Int       @default(2) // 1 productos, 2 servicios, 3 ambos
+  servicioDesde  DateTime?
+  servicioHasta  DateTime?
+  periodo        String? // "YYYY-MM" facturado
+
+  moneda     String  @default("PES")
+  cotizacion Decimal @default(1) @db.Decimal(18, 6)
+
+  importeNeto       Decimal @default(0) @db.Decimal(18, 2)
+  importeNoGravado  Decimal @default(0) @db.Decimal(18, 2)
+  importeExento     Decimal @default(0) @db.Decimal(18, 2)
+  importeIVA        Decimal @default(0) @db.Decimal(18, 2)
+  importeTributos   Decimal @default(0) @db.Decimal(18, 2)
+  importeTotal      Decimal @default(0) @db.Decimal(18, 2)
+
+  // Respuesta de ARCA
+  cae            String?
+  caeVencimiento DateTime?
+  resultadoArca  String? // A (aprobado) | P (parcial) | R (rechazado)
+  observaciones  Json?
+  errores        Json?
+  enviadoAt      DateTime?
+
+  // Notas de crédito / débito
+  comprobanteAsociadoId String?
+  comprobanteAsociado   Comprobante?  @relation("Asociados", fields: [comprobanteAsociadoId], references: [id], onDelete: SetNull)
+  comprobantesHijos     Comprobante[] @relation("Asociados")
+  motivoNota            String?
+
+  // Control previo
+  validaciones Json? // [{nivel: "ERROR"|"ADVERTENCIA", mensaje: "..."}]
+  revisadoAt   DateTime?
+
+  createdById    String?
+  createdBy      Usuario? @relation("ComprobanteCreadoPor", fields: [createdById], references: [id], onDelete: SetNull)
+  autorizadoById String?
+  autorizadoBy   Usuario? @relation("ComprobanteAutorizadoPor", fields: [autorizadoById], references: [id], onDelete: SetNull)
+  autorizadoAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items     ComprobanteItem[]
+  lineasIVA ComprobanteIVA[]
+
+  @@unique([tipo, ptoVtaId, numero])
+  @@index([clienteId, fechaEmision])
+  @@index([estado])
+  @@index([periodo])
+}
+
+model ComprobanteItem {
+  id            String      @id @default(cuid())
+  comprobanteId String
+  comprobante   Comprobante @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  servicioId    String?
+  servicio      Servicio?   @relation(fields: [servicioId], references: [id], onDelete: SetNull)
+
+  descripcion    String
+  cantidad       Decimal @default(1) @db.Decimal(12, 2)
+  unidad         String  @default("Unidad")
+  precioUnitario Decimal @db.Decimal(18, 4)
+  bonificacion   Decimal @default(0) @db.Decimal(5, 2)
+  alicuotaIVA    Decimal @default(21) @db.Decimal(5, 2)
+  importeNeto    Decimal @db.Decimal(18, 2)
+  importeIVA     Decimal @db.Decimal(18, 2)
+  importeTotal   Decimal @db.Decimal(18, 2)
+  orden          Int     @default(0)
+
+  @@index([comprobanteId])
+}
+
+/// Subtotales por alícuota, tal como los espera WSFEv1
+model ComprobanteIVA {
+  id            String      @id @default(cuid())
+  comprobanteId String
+  comprobante   Comprobante @relation(fields: [comprobanteId], references: [id], onDelete: Cascade)
+  alicuotaId    Int // Id de alícuota AFIP: 3=0%, 4=10.5%, 5=21%, 6=27%, 8=5%, 9=2.5%
+  alicuota      Decimal     @db.Decimal(5, 2)
+  baseImponible Decimal     @db.Decimal(18, 2)
+  importe       Decimal     @db.Decimal(18, 2)
+
+  @@unique([comprobanteId, alicuotaId])
+}
