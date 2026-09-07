@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/db";
 import { requerirPermiso } from "@/lib/auth";
 import { Alerta, Boton, Campo, Card, Input, Tabla, Td, Th, Titulo } from "@/components/ui";
-import { CertificadoForm, EmpresaForm } from "./Formularios";
+import { ASUNTO_DEFAULT, CUERPO_DEFAULT } from "@/lib/email";
+import { CertificadoForm, EmpresaForm, SmtpForm } from "./Formularios";
 import { crearPuntoVenta } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +60,27 @@ export default async function ConfiguracionPage() {
           vencimiento={empresa?.arcaCertVencimiento?.toLocaleDateString("es-AR") ?? null}
           subject={empresa?.arcaCertSubject ?? null}
           ultimoError={empresa?.arcaUltimoError ?? null}
+        />
+
+        <SmtpForm
+          smtp={
+            empresa
+              ? {
+                  smtpHost: empresa.smtpHost,
+                  smtpPort: empresa.smtpPort,
+                  smtpSeguro: empresa.smtpSeguro,
+                  smtpUsuario: empresa.smtpUsuario,
+                  tienePassword: !!empresa.smtpPassEncrypted,
+                  emailRemitente: empresa.emailRemitente,
+                  emailCopia: empresa.emailCopia,
+                  enviarEmailAuto: empresa.enviarEmailAuto,
+                  asuntoEmail: empresa.asuntoEmail,
+                  cuerpoEmail: empresa.cuerpoEmail,
+                }
+              : null
+          }
+          asuntoDefault={ASUNTO_DEFAULT}
+          cuerpoDefault={CUERPO_DEFAULT}
         />
 
         <Card

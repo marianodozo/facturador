@@ -108,6 +108,18 @@ model Empresa {
   diasVtoPagoDefault Int   @default(0)
   leyendaPie       String?
 
+  // Envío de comprobantes por email
+  smtpHost         String?
+  smtpPort         Int?     @default(587)
+  smtpSeguro       Boolean  @default(false) // true = SMTPS (465)
+  smtpUsuario      String?
+  smtpPassEncrypted String?
+  emailRemitente   String?
+  emailCopia       String? // copia oculta de todos los envíos
+  enviarEmailAuto  Boolean  @default(false)
+  asuntoEmail      String?
+  cuerpoEmail      String?
+
   updatedAt DateTime @updatedAt
 }
 
@@ -189,6 +201,12 @@ model Cliente {
 // Índices de ajuste
 // ---------------------------------------------------------------------------
 
+enum FuenteIndice {
+  MANUAL
+  DATOS_GOB // apis.datos.gob.ar (series de tiempo del Estado, incluye IPC del INDEC)
+  BCRA // api.bcra.gob.ar (CER, UVA, ICL)
+}
+
 model Indice {
   id          String   @id @default(cuid())
   codigo      String   @unique // IPC, ICL, CER, UVA, PARITARIA, CUSTOM
@@ -197,6 +215,12 @@ model Indice {
   fuente      String? // INDEC, BCRA, cámara, etc.
   activo      Boolean  @default(true)
   createdAt   DateTime @default(now())
+
+  // Actualización automática
+  fuenteTipo   FuenteIndice @default(MANUAL)
+  fuenteId     String? // id de la serie en la API de origen
+  ultimaSync   DateTime?
+  ultimoError  String?
 
   valores   IndiceValor[]
   servicios Servicio[]
@@ -413,6 +437,11 @@ model Comprobante {
   // Control previo
   validaciones Json? // [{nivel: "ERROR"|"ADVERTENCIA", mensaje: "..."}]
   revisadoAt   DateTime?
+
+  // Envío por email
+  emailEnviadoAt DateTime?
+  emailDestino   String?
+  emailError     String?
 
   createdById    String?
   createdBy      Usuario? @relation("ComprobanteCreadoPor", fields: [createdById], references: [id], onDelete: SetNull)

@@ -5,6 +5,8 @@ import {
   guardarCertificado,
   guardarEmpresa,
   probarConexion,
+  probarSmtp,
+  guardarSmtp,
   sincronizarPuntosVenta,
   type EstadoForm,
 } from "./actions";
@@ -215,6 +217,126 @@ export function CertificadoForm({
             onClick={() => startTransition(async () => setPrueba(await sincronizarPuntosVenta()))}
           >
             Sincronizar puntos de venta
+          </Boton>
+        </div>
+      </form>
+
+      {prueba?.ok && (
+        <div className="mt-4">
+          <Alerta tono="exito">{prueba.ok}</Alerta>
+        </div>
+      )}
+      {prueba?.error && (
+        <div className="mt-4">
+          <Alerta tono="error">{prueba.error}</Alerta>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+type SmtpPlano = {
+  smtpHost: string | null;
+  smtpPort: number | null;
+  smtpSeguro: boolean;
+  smtpUsuario: string | null;
+  tienePassword: boolean;
+  emailRemitente: string | null;
+  emailCopia: string | null;
+  enviarEmailAuto: boolean;
+  asuntoEmail: string | null;
+  cuerpoEmail: string | null;
+};
+
+export function SmtpForm({
+  smtp,
+  asuntoDefault,
+  cuerpoDefault,
+}: {
+  smtp: SmtpPlano | null;
+  asuntoDefault: string;
+  cuerpoDefault: string;
+}) {
+  const [estado, accion, pendiente] = useActionState(guardarSmtp, {} as EstadoForm);
+  const [prueba, setPrueba] = useState<EstadoForm | null>(null);
+  const [enCurso, startTransition] = useTransition();
+
+  return (
+    <Card
+      title="Envío de comprobantes por email"
+      descripcion="Servidor SMTP y plantilla del mensaje que acompaña al PDF"
+    >
+      <form action={accion} className="space-y-4">
+        {estado?.error && <Alerta tono="error">{estado.error}</Alerta>}
+        {estado?.ok && <Alerta tono="exito">{estado.ok}</Alerta>}
+
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Campo label="Servidor SMTP">
+            <Input name="smtpHost" placeholder="smtp.gmail.com" defaultValue={smtp?.smtpHost ?? ""} />
+          </Campo>
+          <Campo label="Puerto">
+            <Input name="smtpPort" type="number" defaultValue={smtp?.smtpPort ?? 587} />
+          </Campo>
+          <Campo label="Usuario">
+            <Input name="smtpUsuario" defaultValue={smtp?.smtpUsuario ?? ""} />
+          </Campo>
+          <Campo
+            label="Contraseña"
+            ayuda={smtp?.tienePassword ? "Ya hay una guardada; dejalo vacío para no cambiarla" : "Se guarda cifrada"}
+          >
+            <Input name="smtpPassword" type="password" autoComplete="new-password" />
+          </Campo>
+          <Campo label="Remitente" ayuda="Dirección desde la que sale el email">
+            <Input
+              name="emailRemitente"
+              type="email"
+              defaultValue={smtp?.emailRemitente ?? ""}
+            />
+          </Campo>
+          <Campo label="Copia oculta" ayuda="Opcional: copia de todo lo que se envía">
+            <Input name="emailCopia" type="email" defaultValue={smtp?.emailCopia ?? ""} />
+          </Campo>
+          <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              name="smtpSeguro"
+              defaultChecked={smtp?.smtpSeguro ?? false}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            SMTPS directo (puerto 465)
+          </label>
+          <label className="flex items-center gap-2 self-end pb-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              name="enviarEmailAuto"
+              defaultChecked={smtp?.enviarEmailAuto ?? false}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            Enviar al autorizar
+          </label>
+        </div>
+
+        <Campo
+          label="Asunto"
+          ayuda="Variables: {comprobante} {numero} {empresa} {cliente} {total} {periodo} {vencimiento} {cae}"
+        >
+          <Input name="asuntoEmail" defaultValue={smtp?.asuntoEmail ?? asuntoDefault} />
+        </Campo>
+        <Campo label="Cuerpo del mensaje">
+          <TextArea name="cuerpoEmail" rows={8} defaultValue={smtp?.cuerpoEmail ?? cuerpoDefault} />
+        </Campo>
+
+        <div className="flex flex-wrap gap-2">
+          <Boton type="submit" disabled={pendiente}>
+            {pendiente ? "Guardando…" : "Guardar configuración de email"}
+          </Boton>
+          <Boton
+            type="button"
+            variante="secundario"
+            disabled={enCurso}
+            onClick={() => startTransition(async () => setPrueba(await probarSmtp()))}
+          >
+            {enCurso ? "Probando…" : "Probar conexión SMTP"}
           </Boton>
         </div>
       </form>

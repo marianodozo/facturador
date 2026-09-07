@@ -40,13 +40,44 @@ async function main() {
     update: {},
   });
 
-  // Índices típicos para ajustar contratos de servicios en Argentina
+  // Índices típicos para ajustar contratos de servicios en Argentina.
+  // Los que tienen fuenteId se pueden actualizar solos desde Índices.
   const indices = [
-    { codigo: "IPC", nombre: "Índice de Precios al Consumidor", fuente: "INDEC" },
-    { codigo: "ICL", nombre: "Índice para Contratos de Locación", fuente: "BCRA" },
-    { codigo: "CER", nombre: "Coeficiente de Estabilización de Referencia", fuente: "BCRA" },
-    { codigo: "UVA", nombre: "Unidad de Valor Adquisitivo", fuente: "BCRA" },
-    { codigo: "PARITARIA", nombre: "Ajuste por paritaria del sector", fuente: "Cámara" },
+    {
+      codigo: "IPC",
+      nombre: "Índice de Precios al Consumidor",
+      fuente: "INDEC",
+      fuenteTipo: "DATOS_GOB" as const,
+      fuenteId: "148.3_INIVELNAL_DICI_M_26",
+    },
+    {
+      codigo: "ICL",
+      nombre: "Índice para Contratos de Locación",
+      fuente: "BCRA",
+      fuenteTipo: "BCRA" as const,
+      fuenteId: "40",
+    },
+    {
+      codigo: "CER",
+      nombre: "Coeficiente de Estabilización de Referencia",
+      fuente: "BCRA",
+      fuenteTipo: "BCRA" as const,
+      fuenteId: "30",
+    },
+    {
+      codigo: "UVA",
+      nombre: "Unidad de Valor Adquisitivo",
+      fuente: "BCRA",
+      fuenteTipo: "BCRA" as const,
+      fuenteId: "31",
+    },
+    {
+      codigo: "PARITARIA",
+      nombre: "Ajuste por paritaria del sector",
+      fuente: "Cámara",
+      fuenteTipo: "MANUAL" as const,
+      fuenteId: null,
+    },
   ];
 
   for (const i of indices) {

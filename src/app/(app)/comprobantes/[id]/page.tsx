@@ -15,7 +15,7 @@ import type { Validacion } from "@/lib/facturacion";
 import { Alerta, Boton, Campo, Card, Input, Tabla, Td, Th, Titulo } from "@/components/ui";
 import { EstadoBadge } from "@/components/estados";
 import { emitirUno, aprobarUno } from "../../facturacion/actions";
-import { crearNotaCreditoAction } from "../actions";
+import { crearNotaCreditoAction, enviarPorEmailAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
@@ -298,6 +298,38 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
                 </li>
               ))}
             </ul>
+          </Card>
+        </div>
+      )}
+
+      {c.estado === "AUTORIZADO" && (
+        <div className="mb-4">
+          <Card
+            title="Enviar al cliente"
+            descripcion={
+              c.emailEnviadoAt
+                ? `Último envío: ${c.emailEnviadoAt.toLocaleString("es-AR")} a ${c.emailDestino}`
+                : "El PDF va adjunto, con el asunto y el cuerpo configurados"
+            }
+          >
+            {c.emailError && (
+              <div className="mb-3">
+                <Alerta tono="error">No se pudo enviar: {c.emailError}</Alerta>
+              </div>
+            )}
+            <form action={enviarPorEmailAction} className="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="comprobanteId" value={c.id} />
+              <Campo
+                label="Destinatario"
+                ayuda={`Por defecto: ${c.cliente.emailFacturacion ?? c.cliente.email ?? "sin email cargado"}`}
+                className="min-w-[260px] flex-1"
+              >
+                <Input name="destino" type="email" placeholder="Dejar vacío para usar el del cliente" />
+              </Campo>
+              <Boton variante="secundario" type="submit">
+                {c.emailEnviadoAt ? "Reenviar por email" : "Enviar por email"}
+              </Boton>
+            </form>
           </Card>
         </div>
       )}

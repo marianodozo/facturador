@@ -12,7 +12,8 @@ Emite comprobantes reales contra los web services de ARCA (ex AFIP): **WSAA** pa
 |---|---|
 | **Clientes** | ABM con datos fiscales (tipo y número de documento, condición frente al IVA), domicilio, contacto y condiciones comerciales por defecto. |
 | **Servicios** | ABM por cliente: precio, alícuota de IVA, periodicidad de facturación, día de emisión, inicio/fin de contrato, condiciones comerciales y **regla de ajuste** (índice o porcentaje, con su propia periodicidad y tope opcional). |
-| **Índices** | Carga de series (IPC, ICL, CER, UVA, paritarias o propias) por período `AAAA-MM`, con carga masiva por pegado. |
+| **Índices** | Series (IPC, ICL, CER, UVA, paritarias o propias) por período `AAAA-MM`. Carga manual masiva por pegado **o actualización automática** desde apis.datos.gob.ar (INDEC) y api.bcra.gob.ar. |
+| **Email** | Envío del comprobante con el PDF adjunto al email de facturación del cliente, manual o automático al autorizar, con asunto y cuerpo configurables. |
 | **Facturación** | Corrida por período que genera los borradores, aplica los ajustes pendientes y agrupa los servicios de cada cliente en un comprobante. |
 | **Control previo** | Pantalla de revisión con validaciones de nivel *error* y *advertencia*. Nada se envía a ARCA hasta aprobarlo. |
 | **Comprobantes** | Facturas A/B/C, notas de crédito y de débito A/B/C. PDF con CAE y QR obligatorio. |
@@ -123,9 +124,45 @@ src/lib/kpi.ts                indicadores del tablero
 src/app/(app)/...             pantallas
 ```
 
+## Actualización automática de índices
+
+Cada índice puede tener un origen:
+
+| Origen | Endpoint | Sirve para |
+|---|---|---|
+| `DATOS_GOB` | `apis.datos.gob.ar/series` | IPC del INDEC y demás series del Estado. Id de ejemplo: `148.3_INIVELNAL_DICI_M_26`. |
+| `BCRA` | `api.bcra.gob.ar/estadisticas/v3.0/monetarias` | CER, UVA, ICL. El id es numérico. |
+| `MANUAL` | — | Paritarias o índices propios. |
+
+Las series diarias (CER, UVA, ICL) se consolidan a un valor por mes tomando el **último día con
+dato** de cada mes. En cada sincronización se piden también los 6 meses anteriores al último dato
+guardado, porque las fuentes a veces revisan valores publicados.
+
+Los ids numéricos del BCRA los renumera el organismo: en la pantalla de Índices, el botón
+**Ver catálogo del BCRA** lista las variables disponibles con su id actual, así no hay que adivinar.
+Conviene confirmarlos la primera vez.
+
+Para que corra sola, programá una llamada diaria:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://tu-dominio/api/cron/indices
+```
+
+En Vercel ya está el cron en `vercel.json` (todos los días a las 12 UTC).
+
+## Envío por email
+
+En **Configuración → Envío de comprobantes por email** se cargan host, puerto, usuario y contraseña
+del SMTP (la contraseña se guarda cifrada, igual que la clave de ARCA), el remitente y una copia
+oculta opcional. Con *Enviar al autorizar* tildado, cada comprobante que recibe CAE sale solo al
+email de facturación del cliente. Si el envío falla, el comprobante queda autorizado igual y el
+error se muestra en su ficha para reintentar.
+
+El asunto y el cuerpo aceptan variables: `{comprobante}`, `{numero}`, `{empresa}`, `{cliente}`,
+`{total}`, `{periodo}`, `{vencimiento}`, `{cae}`.
+
 ## Pendientes conocidos
 
-- Envío automático de la factura por email al cliente.
 - Percepciones y otros tributos (el modelo ya tiene `importeTributos`, falta la carga).
 - Facturas M y de exportación (E) — la estructura está, falta la pantalla.
 - Conciliación de cobranzas.

@@ -7,6 +7,7 @@ import { registrarAuditoria, requerirPermiso } from "@/lib/auth";
 import { validarCuit } from "@/lib/fiscal";
 import { inspeccionarCertificado } from "@/lib/arca/wsaa";
 import { dummy, puntosDeVenta, ultimoAutorizado } from "@/lib/arca/wsfev1";
+import { verificarSmtp } from "@/lib/email";
 
 export type EstadoForm = { error?: string; ok?: string };
 
@@ -102,6 +103,45 @@ export async function guardarCertificado(
 
   revalidatePath("/configuracion");
   return { ok: `Certificado cargado. Vence el ${info.vence.toLocaleDateString("es-AR")}.` };
+}
+
+export async function guardarSmtp(_prev: EstadoForm, formData: FormData): Promise<EstadoForm> {
+  await requerirPermiso("config:escribir");
+  const g = (k: string) => String(formData.get(k) ?? "").trim();
+
+  const password = g("smtpPassword");
+
+  try {
+    await prisma.empresa.update({
+      where: { id: 1 },
+      data: {
+        smtpHost: g("smtpHost") || null,
+        smtpPort: Number(g("smtpPort") || 587),
+        smtpSeguro: formData.get("smtpSeguro") === "on",
+        smtpUsuario: g("smtpUsuario") || null,
+        ...(password ? { smtpPassEncrypted: encrypt(password) } : {}),
+        emailRemitente: g("emailRemitente") || null,
+        emailCopia: g("emailCopia") || null,
+        enviarEmailAuto: formData.get("enviarEmailAuto") === "on",
+        asuntoEmail: g("asuntoEmail") || null,
+        cuerpoEmail: g("cuerpoEmail") || null,
+      },
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+
+  revalidatePath("/configuracion");
+  return { ok: "Configuración de email guardada" };
+}
+
+export async function probarSmtp(): Promise<EstadoForm> {
+  await requerirPermiso("config:leer");
+  try {
+    return { ok: await verificarSmtp() };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 export async function probarConexion(): Promise<EstadoForm> {

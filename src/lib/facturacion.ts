@@ -25,6 +25,7 @@ import {
 } from "@/lib/ajustes";
 import { solicitarCAE, ultimoAutorizado } from "@/lib/arca/wsfev1";
 import { ErrorArca } from "@/lib/arca/config";
+import { enviarComprobantePorEmail } from "@/lib/email";
 
 // ---------------------------------------------------------------------------
 // Generación de la corrida de facturación
@@ -509,6 +510,16 @@ export async function emitirComprobante(
         });
       }
     });
+
+    // Envío automático del PDF al cliente, si está habilitado.
+    const empresa = await prisma.empresa.findUnique({ where: { id: 1 } });
+    if (empresa?.enviarEmailAuto) {
+      try {
+        await enviarComprobantePorEmail(comprobanteId);
+      } catch {
+        // El error queda registrado en el comprobante; la emisión no se revierte.
+      }
+    }
 
     return {
       ok: true,
