@@ -1,3 +1,7 @@
+# Facturador ARCA — producción.
+# La base no se expone al exterior; la app escucha sólo en loopback y queda
+# detrás del Caddy que ya corre en la máquina.
+
 services:
   db:
     image: postgres:16-alpine
@@ -5,17 +9,37 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: facturador
-      POSTGRES_PASSWORD: facturador
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?falta POSTGRES_PASSWORD en el .env}
       POSTGRES_DB: facturador
-    ports:
-      - "5432:5432"
     volumes:
       - facturador-db:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U facturador"]
+      test: ["CMD-SHELL", "pg_isready -U facturador -d facturador"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: facturador:latest
+    container_name: facturador
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://facturador:${POSTGRES_PASSWORD}@db:5432/facturador?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:?falta AUTH_SECRET en el .env}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?falta ENCRYPTION_KEY en el .env}
+      CRON_SECRET: ${CRON_SECRET:-}
+      SEED_ADMIN_EMAIL: ${SEED_ADMIN_EMAIL:-admin@empresa.com}
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:-cambiar123}
+      TZ: America/Argentina/Buenos_Aires
+      PORT: 8091
+    ports:
+      - "127.0.0.1:8091:8091"
 
 volumes:
   facturador-db:

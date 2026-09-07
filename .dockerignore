@@ -1,0 +1,13 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+*.md
+docker-compose*.yml
+certs
+storage
+*.pem
+*.key
+*.crt
