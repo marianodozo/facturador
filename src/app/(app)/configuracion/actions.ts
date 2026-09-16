@@ -105,6 +105,39 @@ export async function guardarCertificado(
   return { ok: `Certificado cargado. Vence el ${info.vence.toLocaleDateString("es-AR")}.` };
 }
 
+/** Logo que se imprime arriba a la izquierda en el PDF. */
+export async function guardarLogo(_prev: EstadoForm, formData: FormData): Promise<EstadoForm> {
+  await requerirPermiso("config:escribir");
+
+  const archivo = formData.get("logo");
+  if (!(archivo instanceof File) || archivo.size === 0) {
+    return { error: "Elegí un archivo de imagen" };
+  }
+  if (!["image/png", "image/jpeg"].includes(archivo.type)) {
+    return { error: "El logo tiene que ser PNG o JPG" };
+  }
+  if (archivo.size > 400_000) {
+    return { error: "El logo no puede superar los 400 KB" };
+  }
+
+  const base64 = Buffer.from(await archivo.arrayBuffer()).toString("base64");
+
+  try {
+    await prisma.empresa.update({ where: { id: 1 }, data: { logoBase64: base64 } });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+
+  revalidatePath("/configuracion");
+  return { ok: "Logo actualizado. Se ve en el próximo PDF que generes." };
+}
+
+export async function quitarLogo() {
+  await requerirPermiso("config:escribir");
+  await prisma.empresa.update({ where: { id: 1 }, data: { logoBase64: null } });
+  revalidatePath("/configuracion");
+}
+
 export async function guardarSmtp(_prev: EstadoForm, formData: FormData): Promise<EstadoForm> {
   await requerirPermiso("config:escribir");
   const g = (k: string) => String(formData.get(k) ?? "").trim();

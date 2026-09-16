@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { requerirPermiso } from "@/lib/auth";
 import { Alerta, Boton, Campo, Card, Input, Tabla, Td, Th, Titulo } from "@/components/ui";
 import { ASUNTO_DEFAULT, CUERPO_DEFAULT } from "@/lib/email";
-import { CertificadoForm, EmpresaForm, SmtpForm } from "./Formularios";
+import { CertificadoForm, EmpresaForm, LogoForm, SmtpForm } from "./Formularios";
 import { crearPuntoVenta } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -61,6 +61,8 @@ export default async function ConfiguracionPage() {
           subject={empresa?.arcaCertSubject ?? null}
           ultimoError={empresa?.arcaUltimoError ?? null}
         />
+
+        <LogoForm logoBase64={empresa?.logoBase64 ?? null} />
 
         <SmtpForm
           smtp={

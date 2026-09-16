@@ -7,6 +7,8 @@ import {
   probarConexion,
   probarSmtp,
   guardarSmtp,
+  guardarLogo,
+  quitarLogo,
   sincronizarPuntosVenta,
   type EstadoForm,
 } from "./actions";
@@ -349,6 +351,65 @@ export function SmtpForm({
       {prueba?.error && (
         <div className="mt-4">
           <Alerta tono="error">{prueba.error}</Alerta>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+export function LogoForm({ logoBase64 }: { logoBase64: string | null }) {
+  const [estado, accion, pendiente] = useActionState(guardarLogo, {} as EstadoForm);
+
+  return (
+    <Card
+      title="Logo"
+      descripcion="Se imprime arriba a la izquierda en el PDF del comprobante. PNG o JPG, hasta 400 KB."
+    >
+      <div className="flex flex-wrap items-end gap-6">
+        <div className="flex h-24 w-48 items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 p-2">
+          {logoBase64 ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={`data:image/png;base64,${logoBase64}`}
+              alt="Logo de la empresa"
+              className="max-h-full max-w-full object-contain"
+            />
+          ) : (
+            <span className="text-xs text-gray-400">Sin logo</span>
+          )}
+        </div>
+
+        <form action={accion} className="flex flex-wrap items-end gap-3">
+          <Campo label="Nuevo logo">
+            <input
+              type="file"
+              name="logo"
+              accept="image/png,image/jpeg"
+              className="block w-64 text-sm text-gray-600 file:mr-3 file:rounded-lg file:border-0 file:bg-marca-600 file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-marca-700"
+            />
+          </Campo>
+          <Boton type="submit" disabled={pendiente}>
+            {pendiente ? "Subiendo…" : "Subir logo"}
+          </Boton>
+        </form>
+
+        {logoBase64 && (
+          <form action={quitarLogo}>
+            <Boton variante="fantasma" type="submit">
+              Quitar
+            </Boton>
+          </form>
+        )}
+      </div>
+
+      {estado?.error && (
+        <div className="mt-4">
+          <Alerta tono="error">{estado.error}</Alerta>
+        </div>
+      )}
+      {estado?.ok && (
+        <div className="mt-4">
+          <Alerta tono="exito">{estado.ok}</Alerta>
         </div>
       )}
     </Card>

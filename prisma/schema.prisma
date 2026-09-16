@@ -402,6 +402,10 @@ model Comprobante {
   cliNroDoc          String
   cliCondicionIVA    CondicionIVA
   cliDomicilio       String?
+  cliLocalidad       String?
+  cliProvincia       String?
+  cliEmail           String?
+  cliCondicionPago   String?
 
   fechaEmision   DateTime
   fechaVtoPago   DateTime?

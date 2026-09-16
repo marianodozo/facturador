@@ -15,9 +15,11 @@ import type { Validacion } from "@/lib/facturacion";
 import { Alerta, Boton, Campo, Card, Input, Tabla, Td, Th, Titulo } from "@/components/ui";
 import { EstadoBadge } from "@/components/estados";
 import { emitirUno, aprobarUno } from "../../facturacion/actions";
-import { crearNotaCreditoAction, enviarPorEmailAction } from "../actions";
+import { actualizarFechas, crearNotaCreditoAction, enviarPorEmailAction } from "../actions";
 
 export const dynamic = "force-dynamic";
+
+const iso = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : "");
 
 export default async function ComprobantePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -123,6 +125,55 @@ export default async function ComprobantePage({ params }: { params: Promise<{ id
               <Boton type="submit">Emitir a ARCA</Boton>
             </form>
           )}
+        </div>
+      )}
+
+      {c.estado !== "AUTORIZADO" && puedeEscribir && (
+        <div className="mb-4">
+          <Card
+            title="Fechas"
+            descripcion="Se pueden cambiar mientras el comprobante no tenga CAE. ARCA acepta hasta 10 días de diferencia con el día de emisión para servicios (5 para productos), y nunca una fecha anterior a la del último comprobante autorizado del mismo tipo."
+          >
+            <form action={actualizarFechas} className="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="comprobanteId" value={c.id} />
+              <Campo label="Fecha de emisión">
+                <Input
+                  name="fechaEmision"
+                  type="date"
+                  defaultValue={iso(c.fechaEmision)}
+                  required
+                  className="w-44"
+                />
+              </Campo>
+              <Campo label="Vencimiento del pago">
+                <Input
+                  name="fechaVtoPago"
+                  type="date"
+                  defaultValue={iso(c.fechaVtoPago)}
+                  className="w-44"
+                />
+              </Campo>
+              <Campo label="Servicio desde">
+                <Input
+                  name="servicioDesde"
+                  type="date"
+                  defaultValue={iso(c.servicioDesde)}
+                  className="w-44"
+                />
+              </Campo>
+              <Campo label="Servicio hasta">
+                <Input
+                  name="servicioHasta"
+                  type="date"
+                  defaultValue={iso(c.servicioHasta)}
+                  className="w-44"
+                />
+              </Campo>
+              <Boton variante="secundario" type="submit">
+                Guardar fechas
+              </Boton>
+            </form>
+          </Card>
         </div>
       )}
 

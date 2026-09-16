@@ -136,9 +136,11 @@ export async function generarCorrida(opciones: OpcionesCorrida, usuarioId: strin
         cliTipoDoc: cliente.tipoDocumento,
         cliNroDoc: cliente.numeroDocumento,
         cliCondicionIVA: cliente.condicionIVA,
-        cliDomicilio: [cliente.domicilio, cliente.localidad, cliente.provincia]
-          .filter(Boolean)
-          .join(", "),
+        cliDomicilio: cliente.domicilio,
+        cliLocalidad: cliente.localidad,
+        cliProvincia: cliente.provincia,
+        cliEmail: cliente.emailFacturacion ?? cliente.email,
+        cliCondicionPago: lista[0].condicionPago ?? cliente.condicionPago,
         fechaEmision: opciones.fechaEmision,
         fechaVtoPago: addDays(opciones.fechaEmision, diasVto),
         concepto: empresa.conceptoDefault,
@@ -296,8 +298,36 @@ export async function revisarComprobante(comprobanteId: string): Promise<Validac
   if (diffDias > margen) {
     v.push({
       nivel: "ADVERTENCIA",
-      mensaje: `La fecha de emisión está a ${Math.round(diffDias)} días de hoy; ARCA acepta hasta ${margen}`,
+      mensaje:
+        `La fecha de emisión está a ${Math.round(diffDias)} días de hoy. Para ` +
+        `${c.concepto === 1 ? "productos" : "servicios"} ARCA acepta hasta ${margen} días de ` +
+        `diferencia: si la dejás así, lo más probable es que rechace el comprobante.`,
     });
+  }
+
+  // ARCA no acepta una fecha anterior a la del último comprobante autorizado
+  // del mismo tipo y punto de venta.
+  if (c.estado !== "AUTORIZADO") {
+    const ultimo = await prisma.comprobante.findFirst({
+      where: {
+        id: { not: c.id },
+        tipo: c.tipo,
+        ptoVtaId: c.ptoVtaId,
+        estado: "AUTORIZADO",
+      },
+      orderBy: { numero: "desc" },
+      select: { numero: true, fechaEmision: true },
+    });
+    if (ultimo && c.fechaEmision < ultimo.fechaEmision) {
+      v.push({
+        nivel: "ERROR",
+        mensaje:
+          `La fecha es anterior a la del último comprobante autorizado ` +
+          `(${formatearNumero(c.puntoVenta.numero, ultimo.numero)}, del ` +
+          `${ultimo.fechaEmision.toLocaleDateString("es-AR")}). ARCA exige que la numeración ` +
+          `y las fechas avancen juntas.`,
+      });
+    }
   }
   if (c.concepto !== 1 && (!c.servicioDesde || !c.servicioHasta)) {
     v.push({ nivel: "ERROR", mensaje: "Falta el período de servicio (obligatorio para servicios)" });
@@ -615,6 +645,10 @@ export async function crearNotaCredito(
       cliNroDoc: original.cliNroDoc,
       cliCondicionIVA: original.cliCondicionIVA,
       cliDomicilio: original.cliDomicilio,
+      cliLocalidad: original.cliLocalidad,
+      cliProvincia: original.cliProvincia,
+      cliEmail: original.cliEmail,
+      cliCondicionPago: original.cliCondicionPago,
       fechaEmision: new Date(),
       concepto: original.concepto,
       servicioDesde: original.servicioDesde,
