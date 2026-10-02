@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { hashPassword, registrarAuditoria, requerirPermiso } from "@/lib/auth";
+import { mensajeDeError } from "@/lib/validaciones";
 
 export type EstadoForm = { error?: string; ok?: string };
 
@@ -19,7 +20,7 @@ export async function guardarUsuario(_prev: EstadoForm, formData: FormData): Pro
   const id = String(formData.get("id") ?? "");
 
   const parsed = esquema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) return { error: parsed.error.issues.map((i) => i.message).join(" · ") };
+  if (!parsed.success) return { error: mensajeDeError(parsed.error) };
   const { nombre, email, rol, password } = parsed.data;
 
   if (!id && (!password || password.length < 8)) {

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { registrarAuditoria, requerirPermiso } from "@/lib/auth";
 import { validarCuit } from "@/lib/fiscal";
+import { mensajeDeError } from "@/lib/validaciones";
 
 const esquema = z.object({
   codigo: z.string().trim().min(1, "El código es obligatorio"),
@@ -32,7 +33,11 @@ const esquema = z.object({
   provincia: z.string().trim().optional(),
   codigoPostal: z.string().trim().optional(),
   moneda: z.enum(["PES", "DOL"]),
-  diasVencimiento: z.coerce.number().int().min(0).max(365),
+  diasVencimiento: z.coerce
+    .number("Los días de vencimiento tienen que ser un número")
+    .int()
+    .min(0, "Los días de vencimiento no pueden ser negativos")
+    .max(365, "Los días de vencimiento no pueden superar 365"),
   condicionPago: z.string().trim().optional(),
   notas: z.string().trim().optional(),
   activo: z.coerce.boolean(),
@@ -54,7 +59,7 @@ export async function guardarCliente(
 
   const parsed = leer(formData);
   if (!parsed.success) {
-    return { error: parsed.error.issues.map((i) => i.message).join(" · ") };
+    return { error: mensajeDeError(parsed.error) };
   }
   const datos = parsed.data;
 

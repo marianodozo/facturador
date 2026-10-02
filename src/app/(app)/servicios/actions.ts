@@ -2,50 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { registrarAuditoria, requerirPermiso } from "@/lib/auth";
 import { aplicarAjuste, proximaFecha } from "@/lib/ajustes";
 import { ALICUOTAS_IVA } from "@/lib/fiscal";
-
-const PERIODICIDADES = [
-  "MENSUAL",
-  "BIMESTRAL",
-  "TRIMESTRAL",
-  "CUATRIMESTRAL",
-  "SEMESTRAL",
-  "ANUAL",
-  "UNICA",
-] as const;
-
-const esquema = z.object({
-  clienteId: z.string().min(1, "Elegí un cliente"),
-  nombre: z.string().trim().min(2, "El nombre del servicio es obligatorio"),
-  descripcion: z.string().trim().optional(),
-  moneda: z.enum(["PES", "DOL"]),
-  precioBase: z.coerce.number().positive("El precio debe ser mayor a cero"),
-  alicuotaIVA: z.coerce.number(),
-  cantidad: z.coerce.number().positive(),
-  unidad: z.string().trim().default("Unidad"),
-  periodicidadFacturacion: z.enum(PERIODICIDADES),
-  diaFacturacion: z.coerce.number().int().min(1).max(28),
-  facturaPorAdelantado: z.coerce.boolean(),
-  fechaInicio: z.string().min(1, "Indicá la fecha de inicio"),
-  fechaFin: z.string().optional(),
-  proximaFacturacion: z.string().optional(),
-  tipoAjuste: z.enum(["NINGUNO", "INDICE", "PORCENTAJE_FIJO"]),
-  indiceId: z.string().optional(),
-  periodicidadAjuste: z.string().optional(),
-  ajustePorcentaje: z.string().optional(),
-  periodoBaseIndice: z.string().optional(),
-  topeAjustePorc: z.string().optional(),
-  diasVencimiento: z.coerce.number().int().min(0).max(365),
-  condicionPago: z.string().trim().optional(),
-  ordenCompra: z.string().trim().optional(),
-  centroCosto: z.string().trim().optional(),
-  notas: z.string().trim().optional(),
-  activo: z.coerce.boolean(),
-});
+import { PERIODICIDADES, esquemaServicio, type DatosServicio } from "./esquema";
+import { mensajeDeError } from "@/lib/validaciones";
 
 export type EstadoForm = { error?: string; ok?: string };
 
@@ -57,18 +19,21 @@ export async function guardarServicio(_prev: EstadoForm, formData: FormData): Pr
   const sesion = await requerirPermiso("servicios:escribir");
   const id = String(formData.get("id") ?? "");
 
-  const parsed = esquema.safeParse({
+  const parsed = esquemaServicio.safeParse({
     ...Object.fromEntries(formData.entries()),
     activo: formData.get("activo") === "on",
     facturaPorAdelantado: formData.get("facturaPorAdelantado") === "on",
   });
   if (!parsed.success) {
-    return { error: parsed.error.issues.map((i) => i.message).join(" · ") };
+    return { error: mensajeDeError(parsed.error) };
   }
   const d = parsed.data;
 
   if (!ALICUOTAS_IVA.some((a) => Math.abs(a.valor - d.alicuotaIVA) < 0.001)) {
     return { error: "La alícuota de IVA no está habilitada en ARCA" };
+  }
+  if (!id && d.precioBase === undefined) {
+    return { error: "Indicá el precio del servicio" };
   }
   if (d.tipoAjuste === "INDICE") {
     if (!d.indiceId) return { error: "Elegí el índice con el que se ajusta" };
@@ -131,8 +96,8 @@ export async function guardarServicio(_prev: EstadoForm, formData: FormData): Pr
       const creado = await prisma.servicio.create({
         data: {
           ...datos,
-          precioBase: d.precioBase,
-          precioActual: d.precioBase,
+          precioBase: d.precioBase!,
+          precioActual: d.precioBase!,
           proximoAjuste:
             periodicidadAjuste && d.tipoAjuste !== "NINGUNO"
               ? proximaFecha(fechaInicio, periodicidadAjuste)
