@@ -138,6 +138,8 @@ export default async function ComprobantesPage({
                   <Td className="text-right">
                     <a
                       href={`/api/comprobantes/${c.id}/pdf`}
+                      target="_blank"
+                      rel="noopener"
                       className="text-sm text-marca-600 hover:underline"
                     >
                       PDF
