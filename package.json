@@ -15,7 +15,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "pdf:muestra": "tsx scripts/muestra-pdf.ts"
+    "pdf:muestra": "tsx scripts/muestra-pdf.ts",
+    "verificar": "tsx scripts/verificar-servicio.ts && tsx scripts/verificar-agrupacion.ts && tsx scripts/verificar-proxima-facturacion.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

@@ -7,6 +7,67 @@ import { prisma } from "@/lib/db";
 import { crearNotaCredito, revisarComprobante } from "@/lib/facturacion";
 import { enviarComprobantePorEmail } from "@/lib/email";
 
+/**
+ * Descarta en lote los borradores que coinciden con el filtro del listado.
+ *
+ * Sólo toca BORRADOR y OBSERVADO: un comprobante aprobado todavía puede
+ * emitirse, y uno autorizado no se borra nunca — ese se corrige con una nota
+ * de crédito. Los ítems y los subtotales de IVA se van en cascada.
+ */
+export async function descartarBorradores(formData: FormData) {
+  const sesion = await requerirPermiso("comprobantes:escribir");
+
+  const periodo = String(formData.get("periodo") ?? "").trim();
+  const q = String(formData.get("q") ?? "").trim();
+  const estado = String(formData.get("estado") ?? "").trim();
+
+  // El lote se habilita sólo cuando el listado está filtrado por borradores,
+  // para que no exista un botón que borre todo de una.
+  if (estado !== "BORRADOR" && estado !== "OBSERVADO") {
+    throw new Error("Filtrá por borradores u observados antes de descartar en lote");
+  }
+
+  const { count } = await prisma.comprobante.deleteMany({
+    where: {
+      estado,
+      ...(periodo ? { periodo } : {}),
+      ...(q ? { cliRazonSocial: { contains: q, mode: "insensitive" as const } } : {}),
+    },
+  });
+
+  await registrarAuditoria({
+    usuarioId: sesion.sub,
+    accion: "ELIMINAR",
+    entidad: "Comprobante",
+    detalle: { lote: true, estado, periodo: periodo || null, q: q || null, borrados: count },
+  });
+
+  revalidatePath("/comprobantes");
+  revalidatePath("/facturacion");
+}
+
+/** Descarta un borrador suelto desde el listado. */
+export async function descartarUno(formData: FormData) {
+  const sesion = await requerirPermiso("comprobantes:escribir");
+  const id = String(formData.get("comprobanteId"));
+
+  const c = await prisma.comprobante.findUniqueOrThrow({ where: { id } });
+  if (c.estado === "AUTORIZADO") {
+    throw new Error("Un comprobante autorizado no se borra: se corrige con una nota de crédito");
+  }
+
+  await prisma.comprobante.delete({ where: { id } });
+  await registrarAuditoria({
+    usuarioId: sesion.sub,
+    accion: "ELIMINAR",
+    entidad: "Comprobante",
+    entidadId: id,
+  });
+
+  revalidatePath("/comprobantes");
+  if (c.corridaId) revalidatePath(`/facturacion/${c.corridaId}`);
+}
+
 function aFecha(v: FormDataEntryValue | null): Date | null {
   const s = String(v ?? "").trim();
   return s ? new Date(`${s}T00:00:00`) : null;

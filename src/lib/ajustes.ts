@@ -48,6 +48,39 @@ export function proximaFecha(desde: Date, periodicidad: Periodicidad, dia?: numb
   return new Date(base.getFullYear(), base.getMonth(), Math.min(dia, ultimoDiaDelMes));
 }
 
+/** Último instante del período `AAAA-MM`. */
+export function finDePeriodo(periodo: string): Date {
+  const [y, m] = periodo.split("-").map(Number);
+  return new Date(y, m ?? 1, 0, 23, 59, 59);
+}
+
+/**
+ * Próxima facturación de un servicio después de facturar un período.
+ *
+ * Avanza hasta superar el fin del período facturado, no un solo paso: un
+ * servicio atrasado —o uno que ajusta cada varios meses y se facturó tarde—
+ * quedaría otra vez vencido y volvería a aparecer como borrador en la corrida
+ * siguiente, que es de donde salían las facturas duplicadas.
+ *
+ * Devuelve `null` para los servicios de única vez: esos no se vuelven a
+ * facturar y el llamador los desactiva.
+ */
+export function proximaTrasPeriodo(
+  proximaActual: Date,
+  periodicidad: Periodicidad,
+  finPeriodo: Date,
+  dia?: number | null,
+): Date | null {
+  if (MESES_POR_PERIODICIDAD[periodicidad] === 0) return null;
+
+  let prox = proximaFecha(proximaActual, periodicidad, dia ?? undefined);
+  // El tope evita un bucle infinito si alguna fecha quedara inconsistente
+  for (let i = 0; prox <= finPeriodo && i < 240; i++) {
+    prox = proximaFecha(prox, periodicidad, dia ?? undefined);
+  }
+  return prox;
+}
+
 export interface ResultadoAjuste {
   aplica: boolean;
   motivo: string;

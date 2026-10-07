@@ -2,7 +2,9 @@ import Link from "next/link";
 import { prisma, dec } from "@/lib/db";
 import { requerirSesion } from "@/lib/auth";
 import { NOMBRE_COMPROBANTE, formatearMoneda, formatearNumero } from "@/lib/fiscal";
-import { Card, Tabla, Td, Th, Titulo, Vacio } from "@/components/ui";
+import { Alerta, Boton, Card, Tabla, Td, Th, Titulo, Vacio } from "@/components/ui";
+import { puede } from "@/lib/session";
+import { descartarBorradores, descartarUno } from "./actions";
 import { EstadoBadge } from "@/components/estados";
 import type { EstadoComprobante, TipoComprobante } from "@prisma/client";
 
@@ -22,7 +24,7 @@ export default async function ComprobantesPage({
 }: {
   searchParams: Promise<{ q?: string; estado?: string; tipo?: string; periodo?: string }>;
 }) {
-  await requerirSesion();
+  const sesion = await requerirSesion();
   const { q, estado, tipo, periodo } = await searchParams;
 
   const comprobantes = await prisma.comprobante.findMany({
@@ -48,6 +50,9 @@ export default async function ComprobantesPage({
   const total = comprobantes
     .filter((c) => c.estado === "AUTORIZADO")
     .reduce((a, c) => a + (c.tipo.startsWith("NOTA_CREDITO") ? -1 : 1) * dec(c.importeTotal), 0);
+
+  const puedeEscribir = puede(sesion.rol, "comprobantes:escribir");
+  const esFiltroDeBorradores = estado === "BORRADOR" || estado === "OBSERVADO";
 
   return (
     <>
@@ -98,6 +103,26 @@ export default async function ComprobantesPage({
           </button>
         </form>
 
+        {puedeEscribir && esFiltroDeBorradores && comprobantes.length > 0 && (
+          <div className="mb-4">
+            <Alerta tono="aviso">
+              <form action={descartarBorradores} className="flex flex-wrap items-center gap-3">
+                <input type="hidden" name="estado" value={estado} />
+                <input type="hidden" name="periodo" value={periodo ?? ""} />
+                <input type="hidden" name="q" value={q ?? ""} />
+                <span className="flex-1">
+                  Los borradores no se envían a ARCA y se pueden descartar sin consecuencias.
+                  Este filtro alcanza {comprobantes.length}
+                  {comprobantes.length === 200 ? "+" : ""}.
+                </span>
+                <Boton variante="peligro" type="submit">
+                  Descartar los que coinciden
+                </Boton>
+              </form>
+            </Alerta>
+          </div>
+        )}
+
         {comprobantes.length === 0 ? (
           <Vacio mensaje="No hay comprobantes que coincidan con el filtro" />
         ) : (
@@ -136,14 +161,24 @@ export default async function ComprobantesPage({
                     {formatearMoneda(dec(c.importeTotal), c.moneda)}
                   </Td>
                   <Td className="text-right">
-                    <a
-                      href={`/api/comprobantes/${c.id}/pdf`}
-                      target="_blank"
-                      rel="noopener"
-                      className="text-sm text-marca-600 hover:underline"
-                    >
-                      PDF
-                    </a>
+                    <span className="flex items-center justify-end gap-3">
+                      <a
+                        href={`/api/comprobantes/${c.id}/pdf`}
+                        target="_blank"
+                        rel="noopener"
+                        className="text-sm text-marca-600 hover:underline"
+                      >
+                        PDF
+                      </a>
+                      {puedeEscribir && c.estado !== "AUTORIZADO" && (
+                        <form action={descartarUno}>
+                          <input type="hidden" name="comprobanteId" value={c.id} />
+                          <button className="text-sm text-gray-400 hover:text-red-600">
+                            Descartar
+                          </button>
+                        </form>
+                      )}
+                    </span>
                   </Td>
                 </tr>
               ))}

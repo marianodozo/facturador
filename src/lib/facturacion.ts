@@ -19,9 +19,10 @@ import {
 import {
   aplicarAjuste,
   calcularAjuste,
+  finDePeriodo,
   periodoDe,
   periodoServicio,
-  proximaFecha,
+  proximaTrasPeriodo,
 } from "@/lib/ajustes";
 import { solicitarCAE, ultimoAutorizado } from "@/lib/arca/wsfev1";
 import { ErrorArca } from "@/lib/arca/config";
@@ -72,6 +73,32 @@ export async function generarCorrida(opciones: OpcionesCorrida, usuarioId: strin
     throw new Error("No hay servicios con facturación pendiente para ese período");
   }
 
+  /**
+   * Un servicio que ya tiene comprobante de este período sale de la corrida.
+   *
+   * `proximaFacturacion` sólo avanza cuando el comprobante se autoriza, así que
+   * sin esto los borradores que quedaron sin emitir se vuelven a generar en
+   * cada corrida y se acumulan duplicados. Se mira cualquier estado menos
+   * ANULADO: un comprobante anulado por nota de crédito sí se puede rehacer.
+   */
+  const yaFacturados = await prisma.comprobanteItem.findMany({
+    where: {
+      servicioId: { in: servicios.map((s) => s.id) },
+      comprobante: { periodo: opciones.periodo, estado: { not: "ANULADO" } },
+    },
+    select: { servicioId: true },
+    distinct: ["servicioId"],
+  });
+  const omitidos = new Set(yaFacturados.map((i) => i.servicioId).filter(Boolean) as string[]);
+  const pendientes = servicios.filter((s) => !omitidos.has(s.id));
+
+  if (!pendientes.length) {
+    throw new Error(
+      `Los ${omitidos.size} servicios del período ${opciones.periodo} ya tienen comprobante. ` +
+        `Si querés rehacer alguno, descartá primero su borrador.`,
+    );
+  }
+
   const corrida = await prisma.corridaFacturacion.create({
     data: {
       periodo: opciones.periodo,
@@ -79,6 +106,9 @@ export async function generarCorrida(opciones: OpcionesCorrida, usuarioId: strin
       fechaEmision: opciones.fechaEmision,
       estado: "EN_REVISION",
       creadoPorId: usuarioId,
+      notas: omitidos.size
+        ? `Se omitieron ${omitidos.size} servicios que ya tenían comprobante del período.`
+        : null,
     },
   });
 
@@ -87,7 +117,7 @@ export async function generarCorrida(opciones: OpcionesCorrida, usuarioId: strin
   });
   if (!ptoVta) throw new Error(`El punto de venta ${empresa.ptoVtaDefault} no está dado de alta`);
 
-  const grupos = agruparServicios(servicios);
+  const grupos = agruparServicios(pendientes);
 
   let creados = 0;
 
@@ -182,7 +212,7 @@ export async function generarCorrida(opciones: OpcionesCorrida, usuarioId: strin
     creados++;
   }
 
-  return { corridaId: corrida.id, comprobantes: creados };
+  return { corridaId: corrida.id, comprobantes: creados, omitidos: omitidos.size };
 }
 
 // ---------------------------------------------------------------------------
@@ -513,21 +543,34 @@ export async function emitirComprobante(
         },
       });
 
-      // Avanzar la próxima facturación de los servicios incluidos
+      /**
+       * Avanzar la próxima facturación de los servicios incluidos.
+       *
+       * Se avanza hasta superar el período facturado, no un solo paso: un
+       * servicio atrasado quedaría otra vez vencido y volvería a aparecer en
+       * la corrida siguiente.
+       */
+      const finPeriodo = c.periodo ? finDePeriodo(c.periodo) : c.fechaEmision;
+
       const servicioIds = c.items.map((i) => i.servicioId).filter(Boolean) as string[];
       for (const sid of servicioIds) {
         const s = await tx.servicio.findUnique({ where: { id: sid } });
         if (!s) continue;
+
+        const prox = proximaTrasPeriodo(
+          s.proximaFacturacion,
+          s.periodicidadFacturacion,
+          finPeriodo,
+          s.diaFacturacion,
+        );
+
         await tx.servicio.update({
           where: { id: sid },
-          data: {
-            ultimaFacturacion: c.fechaEmision,
-            proximaFacturacion: proximaFecha(
-              s.proximaFacturacion,
-              s.periodicidadFacturacion,
-              s.diaFacturacion,
-            ),
-          },
+          data:
+            prox === null
+              ? // Única vez: queda facturado y no vuelve a la corrida
+                { ultimaFacturacion: c.fechaEmision, activo: false }
+              : { ultimaFacturacion: c.fechaEmision, proximaFacturacion: prox },
         });
       }
 

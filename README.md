@@ -14,8 +14,8 @@ Emite comprobantes reales contra los web services de ARCA (ex AFIP): **WSAA** pa
 | **Servicios** | ABM por cliente: precio, alícuota de IVA, periodicidad de facturación, día de emisión, inicio/fin de contrato, condiciones comerciales y **regla de ajuste** (índice o porcentaje, con su propia periodicidad y tope opcional). |
 | **Índices** | Series (IPC, ICL, CER, UVA, paritarias o propias) por período `AAAA-MM`. Carga manual masiva por pegado **o actualización automática** desde apis.datos.gob.ar (INDEC) y api.bcra.gob.ar. |
 | **Email** | Envío del comprobante con el PDF adjunto al email de facturación del cliente, manual o automático al autorizar, con asunto y cuerpo configurables. |
-| **Facturación** | Corrida por período que genera los borradores, aplica los ajustes pendientes y agrupa los servicios de cada cliente en un comprobante. |
-| **Control previo** | Pantalla de revisión con validaciones de nivel *error* y *advertencia*. Nada se envía a ARCA hasta aprobarlo. |
+| **Facturación** | Corrida por período que genera los borradores y aplica los ajustes pendientes. Un comprobante por servicio, o todos los del cliente juntos si está tildado *Agrupar en una factura*. Saltea los servicios que ya tienen comprobante del período. |
+| **Control previo** | Pantalla de revisión con validaciones de nivel *error* y *advertencia*. Nada se envía a ARCA hasta aprobarlo. Los borradores se pueden descartar de a uno o en lote. |
 | **Comprobantes** | Facturas A/B/C, notas de crédito y de débito A/B/C. PDF con CAE y QR obligatorio. |
 | **Usuarios** | Roles `ADMIN`, `FACTURADOR` y `LECTURA`, con auditoría de acciones. |
 | **Tablero** | KPIs: facturado del mes y variación, MRR/ARR, IVA débito fiscal, ticket promedio, pendiente de emitir, servicios por facturar, ajustes pendientes, tasa de rechazo de ARCA, serie de 12 meses y top de clientes. |
@@ -47,6 +47,9 @@ npx prisma migrate dev        # crea el esquema
 npm run db:seed               # usuario admin, empresa, punto de venta e índices
 npm run dev
 ```
+
+`npm run verificar` corre las comprobaciones de lógica fiscal, del formulario de servicios y del
+avance de la próxima facturación, sin necesidad de base.
 
 Generar los secretos:
 
@@ -146,6 +149,13 @@ maestra nunca queda en la base. El ticket de acceso se cachea 12 horas, como exi
 6. **Emitir a ARCA** → se pide el CAE comprobante por comprobante; el número lo asigna ARCA
    (`FECompUltimoAutorizado` + 1).
 7. **PDF** → descarga con CAE, vencimiento y QR de verificación.
+
+Se puede emitir de a uno sin romper nada: la corrida siguiente no vuelve a generar el borrador
+de un servicio que ya tiene comprobante del período —ni autorizado ni todavía en borrador— y al
+emitir, la próxima facturación del servicio avanza hasta pasar el período facturado, así un
+servicio atrasado no queda vencido de nuevo. Los borradores que sobran se descartan desde el
+listado de comprobantes, de a uno o todos los que coincidan con el filtro; un comprobante
+autorizado no se borra nunca, se corrige con una nota de crédito.
 
 ## Validaciones del control previo
 
