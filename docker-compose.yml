@@ -1,6 +1,12 @@
 # Facturador ARCA — producción.
-# La base no se expone al exterior; la app escucha sólo en loopback y queda
-# detrás del Caddy que ya corre en la máquina.
+#
+# La base no se expone y la app escucha sólo en loopback: queda detrás del
+# Caddy que ya corre en la instancia para la app de rugby, que la alcanza por
+# nombre de contenedor a través de la red compartida `proxy`.
+#
+# El servicio se llama `facturador` y no `app` a propósito: el compose del
+# rugby ya tiene un servicio `app` y, al compartir red, los alias de Docker
+# chocaban y el tráfico podía terminar en la aplicación equivocada.
 
 services:
   db:
@@ -19,7 +25,7 @@ services:
       timeout: 5s
       retries: 10
 
-  app:
+  facturador:
     build:
       context: .
       dockerfile: Dockerfile
@@ -40,6 +46,16 @@ services:
       PORT: 8091
     ports:
       - "127.0.0.1:8091:8091"
+    networks:
+      - default
+      - proxy
 
 volumes:
   facturador-db:
+
+networks:
+  # Red del compose del rugby, donde vive Caddy. Se declara externa para no
+  # crearla ni borrarla desde acá.
+  proxy:
+    external: true
+    name: rugby-equipos_default

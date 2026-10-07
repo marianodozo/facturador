@@ -21,3 +21,8 @@ certs/
 storage/
 .DS_Store
 npm-debug.log*
+
+# Parches y respaldos que quedan al desplegar a mano
+*.patch
+*.bak
+backups/
