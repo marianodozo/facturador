@@ -55,11 +55,61 @@ openssl rand -base64 48   # AUTH_SECRET
 openssl rand -hex 32      # ENCRYPTION_KEY (64 caracteres hexadecimales)
 ```
 
-Con Docker para la base:
+## Despliegue
+
+El `docker-compose.yml` levanta la app y su Postgres. La app escucha sólo en
+`127.0.0.1:8091` y espera quedar detrás de un reverse proxy que termine TLS; la base no
+se expone al exterior.
 
 ```bash
+cp .env.example .env
+docker compose build
 docker compose up -d
+docker compose exec facturador npx prisma db seed   # sólo la primera vez
 ```
+
+El contenedor aplica las migraciones pendientes al arrancar. Para actualizar:
+`git pull && docker compose build && docker compose up -d`.
+
+El compose declara la red `proxy` como **externa**, apuntando a la red donde vive el
+reverse proxy. Si en tu instalación el proxy corre en otro lado, cambiá ese nombre o
+sacá el bloque `networks` y publicá el puerto como prefieras.
+
+Cada build deja una capa de imagen de casi 1 GB, así que el disco se llena solo con el
+tiempo. Conviene limpiar cada tanto:
+
+```bash
+docker builder prune -af
+docker image prune -f
+```
+
+**Nunca** uses `docker system prune -a --volumes`: ese `--volumes` borra el volumen de
+la base, con todos los comprobantes emitidos adentro.
+
+## Backups
+
+Esto guarda comprobantes fiscales: ARCA confirma los CAE, pero no te devuelve tus datos.
+Un backup diario fuera de la máquina no es opcional.
+
+```bash
+docker compose exec -T db pg_dump -U facturador -d facturador --clean --if-exists \
+  | gzip -9 > facturador-$(date +%F).sql.gz
+```
+
+Dos cosas que conviene no saltear:
+
+- **Verificar el dump antes de darlo por bueno.** Que descomprima (`gzip -t`) y que
+  contenga las tablas esperadas. Un backup que falla en silencio es peor que ninguno,
+  porque da confianza falsa.
+- **Guardar `ENCRYPTION_KEY` en otro lado**, no junto al backup. Es la clave que descifra
+  el certificado de ARCA guardado en la base; si están juntas, un solo incidente se lleva
+  las dos mitades.
+
+Para restaurar: base vacía, `gunzip -c backup.sql.gz | psql`, y levantar la app. Las
+migraciones no hace falta correrlas, el dump trae el esquema y el historial.
+
+Y probá la restauración una vez, sobre una base descartable. Un backup que nunca se
+restauró es una hipótesis.
 
 ## Conectar con ARCA
 
