@@ -3,6 +3,7 @@ import { prisma, dec } from "@/lib/db";
 import { requerirPermiso } from "@/lib/auth";
 import { formatearMoneda } from "@/lib/fiscal";
 import { NOMBRE_PERIODICIDAD, periodoDe } from "@/lib/ajustes";
+import { agruparServicios } from "@/lib/agrupacion";
 import { Card, Tabla, Td, Th, Titulo, Vacio } from "@/components/ui";
 import { EstadoCorridaBadge } from "@/components/estados";
 import { NuevaCorrida } from "./NuevaCorrida";
@@ -40,6 +41,8 @@ export default async function FacturacionPage() {
     (a, s) => a + dec(s.precioActual) * dec(s.cantidad),
     0,
   );
+  // Cada servicio va en su propia factura, salvo los clientes que piden agrupar
+  const comprobantesAGenerar = agruparServicios(porFacturar).length;
 
   return (
     <>
@@ -54,7 +57,7 @@ export default async function FacturacionPage() {
       <div className="mb-4">
         <Card
           title="Servicios a facturar en este período"
-          descripcion={`${porFacturar.length} servicios · ${formatearMoneda(totalPorFacturar)} sin IVA`}
+          descripcion={`${porFacturar.length} servicios → ${comprobantesAGenerar} comprobantes · ${formatearMoneda(totalPorFacturar)} sin IVA`}
         >
           {porFacturar.length === 0 ? (
             <Vacio mensaje="No hay servicios con facturación pendiente este mes" />

@@ -41,13 +41,18 @@ const esquema = z.object({
   condicionPago: z.string().trim().optional(),
   notas: z.string().trim().optional(),
   activo: z.coerce.boolean(),
+  agruparEnUnaFactura: z.coerce.boolean(),
 });
 
 export type EstadoForm = { error?: string; ok?: string };
 
 function leer(formData: FormData) {
   const raw = Object.fromEntries(formData.entries());
-  return esquema.safeParse({ ...raw, activo: formData.get("activo") === "on" });
+  return esquema.safeParse({
+    ...raw,
+    activo: formData.get("activo") === "on",
+    agruparEnUnaFactura: formData.get("agruparEnUnaFactura") === "on",
+  });
 }
 
 export async function guardarCliente(

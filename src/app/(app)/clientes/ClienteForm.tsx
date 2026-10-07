@@ -122,6 +122,22 @@ export function ClienteForm({ cliente }: { cliente?: Cliente }) {
             <TextArea name="notas" rows={3} defaultValue={cliente?.notas ?? ""} />
           </Campo>
         </div>
+
+        <label className="mt-4 flex items-start gap-2 text-sm text-gray-700">
+          <input
+            type="checkbox"
+            name="agruparEnUnaFactura"
+            defaultChecked={cliente?.agruparEnUnaFactura ?? false}
+            className="mt-0.5 h-4 w-4 rounded border-gray-300"
+          />
+          <span>
+            Agrupar todos sus servicios en una sola factura
+            <span className="mt-0.5 block text-[11px] text-gray-500">
+              Por defecto cada servicio se factura por separado. Marcalo si este cliente prefiere
+              un único comprobante por período, con un ítem por servicio.
+            </span>
+          </span>
+        </label>
       </Card>
 
       <div className="flex gap-2">

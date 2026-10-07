@@ -25,6 +25,7 @@ import {
 } from "@/lib/ajustes";
 import { solicitarCAE, ultimoAutorizado } from "@/lib/arca/wsfev1";
 import { ErrorArca } from "@/lib/arca/config";
+import { agruparServicios } from "@/lib/agrupacion";
 import { enviarComprobantePorEmail } from "@/lib/email";
 
 // ---------------------------------------------------------------------------
@@ -86,16 +87,13 @@ export async function generarCorrida(opciones: OpcionesCorrida, usuarioId: strin
   });
   if (!ptoVta) throw new Error(`El punto de venta ${empresa.ptoVtaDefault} no está dado de alta`);
 
-  // Un comprobante por cliente, agrupando todos sus servicios del período.
-  const porCliente = new Map<string, typeof servicios>();
-  for (const s of servicios) {
-    porCliente.set(s.clienteId, [...(porCliente.get(s.clienteId) ?? []), s]);
-  }
+  const grupos = agruparServicios(servicios);
 
   let creados = 0;
 
-  for (const [clienteId, lista] of porCliente) {
+  for (const lista of grupos) {
     const cliente = lista[0].cliente;
+    const clienteId = lista[0].clienteId;
 
     // Ajustes antes de tomar el precio
     for (const s of lista) {
